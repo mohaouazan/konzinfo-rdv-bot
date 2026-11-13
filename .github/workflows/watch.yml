@@ -2,17 +2,17 @@ name: watch
 
 on:
   schedule:
-    - cron: "*/5 * * * *"       # toutes les 5 min = minimum GitHub (horaire indicatif, souvent en retard)
+    - cron: "*/5 * * * *"   # toutes les 5 min (minimum GitHub ; horaire indicatif, souvent en retard)
   workflow_dispatch:
 
 concurrency:
-  group: konzinfo-watch
+  group: watch
   cancel-in-progress: false
 
 jobs:
   watch:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
 
@@ -30,34 +30,18 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: state
-          key: konzinfo-state-${{ github.run_id }}
-          restore-keys: konzinfo-state-
+          key: state-${{ github.run_id }}
+          restore-keys: state-
 
-      - name: Verification de disponibilite
+      - name: Verification des creneaux
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          KONZINFO_PERSON_NAME: ${{ secrets.KONZINFO_PERSON_NAME }}
-          KONZINFO_PERSON_BIRTH_DATE: ${{ secrets.KONZINFO_PERSON_BIRTH_DATE }}
-          KONZINFO_PERSON_PHONE: ${{ secrets.KONZINFO_PERSON_PHONE }}
-          KONZINFO_PERSON_EMAIL: ${{ secrets.KONZINFO_PERSON_EMAIL }}
-          KONZINFO_PERSON_PASSPORT: ${{ secrets.KONZINFO_PERSON_PASSPORT }}
-          CALLMEBOT_USER: ${{ secrets.CALLMEBOT_USER }}
-          CALLMEBOT_LANG: ${{ secrets.CALLMEBOT_LANG }}
-        run: python -m konzinfo --config config.watch.yaml watch --once
+        run: python check.py
 
       - name: Sauvegarder l'etat
         if: always()
         uses: actions/cache/save@v4
         with:
           path: state
-          key: konzinfo-state-${{ github.run_id }}
-
-      - name: Captures en cas d'echec
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshots-${{ github.run_id }}
-          path: screenshots
-          if-no-files-found: ignore
-          retention-days: 7
+          key: state-${{ github.run_id }}
