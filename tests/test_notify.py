@@ -111,3 +111,23 @@ def test_call_is_best_effort(monkeypatch):
     ok_page = '<script>var error = 0;</script><p>Checking Authorization for @moi...</p><p>Call queued</p>'
     monkeypatch.setattr(notify_mod.requests, "get", lambda url, params, timeout: FakeResp(200, ok_page))
     assert n._call("Konzinfo : appel") is True                 # un mot suspect dans un <script> ne compte pas
+
+
+def test_call_retries_when_callmebot_is_flooded(monkeypatch):
+    flood = ("Autorization OK Starting Telegram Audio Call. Script ended before Timeout. "
+             "Error: FLOOD - Too many users making calls at this time. This call was skipped.")
+    answers = iter([FakeResp(200, flood), FakeResp(200, flood), FakeResp(200, "Autorization OK. Call done.")])
+    gets, sleeps = [], []
+    monkeypatch.setattr(notify_mod.requests, "get", lambda url, params, timeout: gets.append(1) or next(answers))
+    monkeypatch.setattr(notify_mod.time, "sleep", lambda s: sleeps.append(s))
+    n = Notifier(None, None, call=CallConfig(user="@moi"))
+    assert n._call("Konzinfo : appel") is True                 # 3e essai reussi
+    assert len(gets) == 3 and sleeps == [notify_mod.CALL_RETRY_DELAY_S] * 2
+    gets.clear()
+    monkeypatch.setattr(notify_mod.requests, "get", lambda url, params, timeout: gets.append(1) or FakeResp(200, flood))
+    assert n._call("Konzinfo : appel") is False                # sature jusqu'au bout : abandon
+    assert len(gets) == notify_mod.CALL_ATTEMPTS
+    gets.clear()
+    monkeypatch.setattr(notify_mod.requests, "get",
+                        lambda url, params, timeout: gets.append(1) or FakeResp(200, "Warning! User not authorized."))
+    assert n._call("Konzinfo : appel") is False and len(gets) == 1   # refus definitif : pas de nouvel essai

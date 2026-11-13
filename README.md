@@ -103,6 +103,8 @@ erreurs et blocages. Jamais pour le battement de cœur ni les simples vérificat
 limitée en fréquence (re-alerte, erreurs), donc pas de rafale. Le message Telegram est toujours envoyé ; l'appel est un
 complément « meilleur effort » : CallMeBot est un service non officiel, en file d'attente partagée (retard possible),
 appel de 30 s, texte lu limité à 256 caractères, et seul ton @username lui est transmis (aucune donnée du dossier).
+Quand le service est saturé (réponse « FLOOD ») ou refuse deux appels en moins de 65 s, le script réessaie jusqu'à
+3 fois à 70 s d'intervalle ; au-delà, il abandonne l'appel (le message Telegram, lui, est déjà parti).
 
 Android : règle la discussion avec ton bot sur un son fort et, dans les paramètres Android de notification de cette
 discussion, coche « Ignorer Ne pas déranger » ; autorise aussi les appels Telegram en mode Ne pas déranger.

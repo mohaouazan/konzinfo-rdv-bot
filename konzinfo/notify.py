@@ -21,6 +21,10 @@ MAX_SPEECH = 256  # CallMeBot coupe le texte lu au-dela
 # CallMeBot repond en HTTP 200 meme en cas de refus : le verdict est dans le texte de la page, ex.
 # « Authorization for user @x is not received. Warning! User not authorized. »
 _CALL_FAILURE = re.compile(r"error|not authorized|not received|warning|disabled|invalid", re.I)
+# Echecs transitoires du service partage : saturation (« FLOOD »), ligne occupee, 65 s minimum entre deux appels.
+_CALL_RETRYABLE = re.compile(r"flood|busy|too many|within 65 seconds", re.I)
+CALL_ATTEMPTS = 3          # tentatives max pour un meme appel
+CALL_RETRY_DELAY_S = 70    # CallMeBot refuse deux appels au meme utilisateur en moins de 65 s
 
 
 def _visible_text(html: str) -> str:
@@ -104,21 +108,30 @@ class Notifier:
 
     def _call(self, text: str) -> bool:
         """Appel vocal Telegram via CallMeBot : le service appelle `self.call.user` et lit `text` (synthese vocale).
-        cc=no : pas de copie texte (notre message Telegram suffit). Ne leve jamais."""
+        cc=no : pas de copie texte (notre message Telegram suffit). Service partage : en cas de saturation
+        (« FLOOD », ligne occupee, 65 s entre deux appels), reessaie jusqu'a CALL_ATTEMPTS fois. Ne leve jamais."""
         params = {"user": self.call.user, "text": text[:MAX_SPEECH], "lang": self.call.lang,
                   "rpt": str(self.call.repeat), "cc": "no"}
-        try:
-            resp = requests.get(CALLMEBOT_URL, params=params, timeout=20)
-        except requests.RequestException as exc:
-            log.warning("CallMeBot injoignable : %s", exc)
-            return False
-        verdict = _visible_text(resp.text)
-        if resp.status_code != 200 or _CALL_FAILURE.search(verdict):
+        for attempt in range(1, CALL_ATTEMPTS + 1):
+            try:
+                # CallMeBot ne repond qu'une fois l'appel termine (synthese vocale + 30 s de sonnerie) : delai large.
+                resp = requests.get(CALLMEBOT_URL, params=params, timeout=90)
+            except requests.RequestException as exc:
+                log.warning("CallMeBot injoignable : %s", exc)
+                return False
+            verdict = _visible_text(resp.text)
+            if resp.status_code == 200 and not _CALL_FAILURE.search(verdict):
+                log.info("CallMeBot : appel vers %s demande (%s)", self.call.user, verdict[:200] or "OK")
+                return True
+            if attempt < CALL_ATTEMPTS and _CALL_RETRYABLE.search(verdict):
+                log.info("CallMeBot sature (%s) : nouvel essai %d/%d dans %d s", verdict[-120:],
+                         attempt + 1, CALL_ATTEMPTS, CALL_RETRY_DELAY_S)
+                time.sleep(CALL_RETRY_DELAY_S)
+                continue
             log.warning("CallMeBot : appel non passe (HTTP %s) : %s", resp.status_code,
                         verdict[:300] or "(reponse vide)")
             return False
-        log.info("CallMeBot : appel vers %s demande (%s)", self.call.user, verdict[:200] or "OK")
-        return True
+        return False
 
     @staticmethod
     def _post(url: str, **kwargs) -> bool:
