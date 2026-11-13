@@ -1,0 +1,61 @@
+name: watch
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"      # toutes les 15 min (GitHub : minimum 5 min, horaire indicatif)
+  workflow_dispatch:
+
+concurrency:
+  group: konzinfo-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Dependances
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Restaurer l'etat precedent
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: konzinfo-state-${{ github.run_id }}
+          restore-keys: konzinfo-state-
+
+      - name: Verification de disponibilite
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KONZINFO_PERSON_NAME: ${{ secrets.KONZINFO_PERSON_NAME }}
+          KONZINFO_PERSON_BIRTH_DATE: ${{ secrets.KONZINFO_PERSON_BIRTH_DATE }}
+          KONZINFO_PERSON_PHONE: ${{ secrets.KONZINFO_PERSON_PHONE }}
+          KONZINFO_PERSON_EMAIL: ${{ secrets.KONZINFO_PERSON_EMAIL }}
+          KONZINFO_PERSON_PASSPORT: ${{ secrets.KONZINFO_PERSON_PASSPORT }}
+        run: python -m konzinfo --config config.watch.yaml watch --once
+
+      - name: Sauvegarder l'etat
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: konzinfo-state-${{ github.run_id }}
+
+      - name: Captures en cas d'echec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ github.run_id }}
+          path: screenshots
+          if-no-files-found: ignore
+          retention-days: 7

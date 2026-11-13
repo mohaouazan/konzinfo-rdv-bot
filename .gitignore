@@ -1,0 +1,19 @@
+# --- données personnelles & secrets : JAMAIS versionnés ---
+config.yaml
+.env
+
+# --- état, captures, artefacts de découverte, profil navigateur ---
+state/
+screenshots/
+discovery/
+user_data/
+logs/
+*.har
+trace*.zip
+
+# --- python ---
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/

@@ -1,0 +1,14 @@
+# Configuration du SURVEILLANT (GitHub Actions / watch) : aucune donnée personnelle.
+site:
+  url: "https://konzinfobooking.mfa.gov.hu/?lng=en"
+
+booking:
+  consulate: "Morocco - Rabat"
+  applications: ["Schengen"]
+  applicants: 1
+
+polling:
+  interval_minutes: 15
+  jitter_seconds: 30
+  realert_minutes: 60
+  error_alert_minutes: 180

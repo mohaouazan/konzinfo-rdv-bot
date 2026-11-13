@@ -1,0 +1,32 @@
+# Copier ce fichier en "config.yaml" (gitignoré) et remplir avec les vraies données.
+site:
+  url: "https://konzinfobooking.mfa.gov.hu/?lng=en"   # UI anglaise = sélecteurs stables
+
+booking:
+  consulate: "Morocco - Rabat"                 # sous-chaîne cherchée dans la liste « Select location »
+  applications: ["Schengen"]         # sous-chaîne(s) cochée(s) dans la modal « Applications »
+  applicants: 1
+  person:
+    name: "PRENOM NOM"
+    birth_date: "1990-01-15"         # AAAA-MM-JJ
+    phone: "+212600000000"           # format international
+    email: "vous@example.com"        # le code de validation et la confirmation arrivent ici
+    passport_number: "XX0000000"     # utilisé seulement si le formulaire affiche un champ passeport
+  extra_fields: {}                   # autres champs dynamiques : { "Libellé exact du champ": "valeur" }
+
+slots:
+  earliest: null                     # ex. "2026-12-01" (null = dès que possible)
+  latest: null                       # ex. "2027-01-31"
+  weekdays: null                     # ex. [0, 1, 2]  (0 = lundi … 6 = dimanche)
+  hours: null                        # ex. ["08:00", "12:00"]  (créneaux commençant dans cette plage)
+
+polling:
+  interval_minutes: 5                # intervalle entre deux vérifications (local)
+  jitter_seconds: 60                 # aléa ajouté à l'intervalle
+  realert_minutes: 30                # re-prévenir si des créneaux restent disponibles
+  max_backoff_minutes: 120           # plafond du backoff après erreurs répétées
+  error_alert_minutes: 60            # au plus une alerte d'erreur par heure
+
+human:
+  confirm_timeout_minutes: 15        # temps laissé pour saisir le code e-mail et cliquer « Complete booking »
+  beep: true                         # bip Windows quand un créneau est sélectionné
