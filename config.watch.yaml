@@ -8,7 +8,8 @@ booking:
   applicants: 1
 
 polling:
-  interval_minutes: 15
+  interval_minutes: 5
   jitter_seconds: 30
   realert_minutes: 60
   error_alert_minutes: 180
+  heartbeat_hours: 24

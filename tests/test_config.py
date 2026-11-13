@@ -39,7 +39,7 @@ def test_person_from_environment(monkeypatch):
     assert cfg.booking.person.name == "TEST NOM"
     assert cfg.booking.person.birth_date.isoformat() == "1999-01-02"
     assert cfg.booking.person.passport_number == "AB123456"
-    assert cfg.polling.interval_minutes == 15
+    assert cfg.polling.interval_minutes == 5
 
 
 def test_env_overrides_and_telegram(monkeypatch):

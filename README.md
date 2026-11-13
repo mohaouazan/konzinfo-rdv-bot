@@ -4,7 +4,7 @@ Surveillance et **réservation semi-automatique** de rendez-vous consulaires hon
 <https://konzinfobooking.mfa.gov.hu/> (Konzinfo Booking, Ministère hongrois des Affaires étrangères).
 
 - `watch` : vérifie régulièrement s'il existe des créneaux pour un consulat / type de demande et **alerte sur Telegram**
-  (tourne sur GitHub Actions toutes les 15 min, ou en local).
+  (tourne sur GitHub Actions toutes les 5 min, ou en local).
 - `book` : sur ton PC, dans un **navigateur visible**, remplit le formulaire avec tes données, choisit le premier créneau
   conforme, passe à l'étape « Validate »… puis **s'arrête** : c'est **toi** qui saisis le code reçu par e-mail et qui
   cliques « Complete booking ». Le script ne finalise jamais une réservation à ta place.
@@ -42,7 +42,7 @@ python -m konzinfo notify-test               # doit afficher un message dans Tel
 | `booking.person.*` | Nom (comme sur le passeport), date de naissance `AAAA-MM-JJ`, téléphone international, e-mail, n° de passeport |
 | `booking.extra_fields` | Autres champs éventuels `{ "Libellé exact": "valeur" }` |
 | `slots.earliest / latest / weekdays / hours` | Filtres de créneaux (`null` = n'importe lequel, le plus tôt possible) |
-| `polling.*` | Intervalle, aléa, re-alerte, plafond du backoff, fréquence max des alertes d'erreur |
+| `polling.*` | Intervalle, aléa, re-alerte, plafond du backoff, fréquence max des alertes d'erreur, battement de cœur (`heartbeat_hours`, 0 = désactivé) |
 | `human.confirm_timeout_minutes` | Temps laissé pour saisir le code e-mail et cliquer « Complete booking » |
 
 L'e-mail configuré reçoit le **code de validation** (étape « Validate ») et la **confirmation** : garde cette boîte
@@ -66,7 +66,7 @@ délai, il te prévient et **laisse le navigateur ouvert**.
 
 ## GitHub Actions (surveillance cloud)
 
-Le workflow `.github/workflows/watch.yml` lance `watch --once` toutes les 15 min avec `config.watch.yaml`
+Le workflow `.github/workflows/watch.yml` lance `watch --once` toutes les 5 min avec `config.watch.yaml`
 (sans donnée personnelle versionnée). Le site exige un formulaire **valide** avant d'interroger les créneaux : les
 données sont donc fournies par des **secrets** du dépôt (Settings → Secrets and variables → Actions) :
 
@@ -75,6 +75,14 @@ données sont donc fournies par des **secrets** du dépôt (Settings → Secrets
 
 Limites : le cron GitHub est indicatif (souvent en retard), l'IP des runners peut être bloquée par le site, et le
 navigateur y est forcément invisible — la réservation elle-même se fait toujours depuis ton PC.
+
+Cadence et quota : le cron est réglé au minimum GitHub (5 min). Sur un dépôt **privé**, le forfait gratuit
+(2 000 min/mois, ~2 min par run) ne tiendrait que quelques jours : le dépôt est donc **public** (minutes illimitées)
+et ne contient aucune donnée personnelle. GitHub désactive automatiquement les crons d'un dépôt public après
+**60 jours sans activité** (aucun commit) : pousse un petit changement de temps en temps, ou ré-active le workflow dans
+l'onglet Actions. Pour qu'un arrêt ne passe pas inaperçu, le surveillant envoie un **battement de cœur** Telegram
+(« Surveillance active ») au plus une fois par jour (`polling.heartbeat_hours`) : plus aucun message pendant plus
+d'un jour signifie que la surveillance est arrêtée.
 
 ## Comment ça marche (technique)
 

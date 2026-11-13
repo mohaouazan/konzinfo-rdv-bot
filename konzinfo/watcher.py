@@ -81,6 +81,7 @@ def process_result(cfg: AppConfig, result: dict, prev: dict, notifier: Notifier,
                 state["last_error_alert_ts"] = now_iso()
         return state
     state["consecutive_errors"] = 0
+    sent_any = False
     if result["available"]:
         first_time = not prev.get("available")
         if first_time or _elapsed_minutes(prev.get("last_alert_ts")) >= cfg.polling.realert_minutes:
@@ -91,11 +92,31 @@ def process_result(cfg: AppConfig, result: dict, prev: dict, notifier: Notifier,
             photo = result.get("screenshot")
             if notifier.send(msg, photo=photo, beep=True):
                 state["last_alert_ts"] = now_iso()
+                sent_any = True
     elif prev.get("available"):
-        notifier.send(f"ℹ️ Plus aucun creneau disponible pour {label}.")
+        sent_any = notifier.send(f"ℹ️ Plus aucun creneau disponible pour {label}.") or sent_any
     if notify_always and not result["available"]:
-        notifier.send(f"🔍 Verification {label} : aucun creneau ({result['ts']}).")
+        sent_any = notifier.send(f"🔍 Verification {label} : aucun creneau ({result['ts']}).") or sent_any
+    _heartbeat(cfg, result, prev, state, notifier, label, sent_any)
     return state
+
+
+def _heartbeat(cfg: AppConfig, result: dict, prev: dict, state: dict, notifier: Notifier,
+               label: str, sent_any: bool) -> None:
+    """Message « surveillance active » au plus une fois par `polling.heartbeat_hours`, seulement si rien d'autre
+    n'a ete envoye : un silence de plus d'un jour signale alors un surveillant arrete (cron desactive, quota, panne)."""
+    checks = int(prev.get("checks_since_heartbeat", 0)) + 1
+    state["checks_since_heartbeat"] = checks
+    hours = cfg.polling.heartbeat_hours
+    if not hours or sent_any or result["available"]:
+        return
+    if _elapsed_minutes(prev.get("last_heartbeat_ts")) < hours * 60:
+        return
+    msg = (f"💓 Surveillance active - {label}\n{checks} verification(s) depuis le dernier point, aucun creneau.\n"
+           f"Derniere verification : {result['ts']}")
+    if notifier.send(msg):
+        state["last_heartbeat_ts"] = now_iso()
+        state["checks_since_heartbeat"] = 0
 
 
 def run(cfg: AppConfig, *, once: bool, headless: bool = True, deep: bool = True,

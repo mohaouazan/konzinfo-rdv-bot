@@ -26,6 +26,7 @@ polling:
   realert_minutes: 30                # re-prévenir si des créneaux restent disponibles
   max_backoff_minutes: 120           # plafond du backoff après erreurs répétées
   error_alert_minutes: 60            # au plus une alerte d'erreur par heure
+  heartbeat_hours: 24                # message « surveillance active » au plus une fois par jour (0 = désactivé)
 
 human:
   confirm_timeout_minutes: 15        # temps laissé pour saisir le code e-mail et cliquer « Complete booking »

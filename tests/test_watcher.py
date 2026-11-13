@@ -49,3 +49,34 @@ def test_gone_and_error_throttling(tmp_path):
     count = len(n.messages)
     state = process_result(cfg, err, state, n)  # deuxieme erreur dans l'heure : pas de spam
     assert len(n.messages) == count and state["consecutive_errors"] == 2
+
+
+def test_heartbeat_once_a_day(tmp_path):
+    cfg = _cfg(tmp_path)
+    n = RecordingNotifier()
+    quiet = {"ts": "2026-11-13T10:00:00+00:00", "available": False, "days": [], "slots": [], "error": None}
+    state = process_result(cfg, quiet, {}, n)            # tout premier cycle : point de vie immediat
+    assert len(n.messages) == 1 and "Surveillance active" in n.messages[0] and "1 verification" in n.messages[0]
+    assert state["last_heartbeat_ts"] and state["checks_since_heartbeat"] == 0
+    state = process_result(cfg, quiet, state, n)         # quelques minutes plus tard : silence
+    state = process_result(cfg, quiet, state, n)
+    assert len(n.messages) == 1 and state["checks_since_heartbeat"] == 2
+    old = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    state = process_result(cfg, quiet, {**state, "last_heartbeat_ts": old}, n)
+    assert len(n.messages) == 2 and "3 verification" in n.messages[1]
+    assert state["checks_since_heartbeat"] == 0
+
+
+def test_heartbeat_disabled_and_not_doubled(tmp_path):
+    cfg_file = tmp_path / "c.yaml"
+    cfg_file.write_text("booking:\n  consulate: Morocco - Rabat\n  applications: [Schengen]\n"
+                        "polling:\n  heartbeat_hours: 0\n", encoding="utf-8")
+    cfg = load_config(cfg_file, root=tmp_path)
+    n = RecordingNotifier()
+    quiet = {"ts": "x", "available": False, "days": [], "slots": [], "error": None}
+    process_result(cfg, quiet, {}, n)
+    assert n.messages == []
+    cfg2 = _cfg(tmp_path)                                # avec --notify-always : pas de battement en double
+    n2 = RecordingNotifier()
+    process_result(cfg2, quiet, {}, n2, notify_always=True)
+    assert len(n2.messages) == 1 and "Verification" in n2.messages[0]
