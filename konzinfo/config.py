@@ -56,6 +56,8 @@ class PollingConfig:
     max_backoff_minutes: int = 120
     error_alert_minutes: int = 60
     heartbeat_hours: int = 24          # 0 = pas de message « surveillance active »
+    insist_minutes: float = 3          # apres une alerte urgente : rappels repetes jusqu'a reponse au bot (0 = aucun)
+    insist_every_seconds: int = 30     # intervalle entre deux rappels (>= 10)
 
 
 @dataclass
@@ -284,11 +286,15 @@ def load_config(path: Path | str | None = None, *, root: Path | str | None = Non
         max_backoff_minutes=int(polling_raw.get("max_backoff_minutes", 120)),
         error_alert_minutes=int(polling_raw.get("error_alert_minutes", 60)),
         heartbeat_hours=int(polling_raw.get("heartbeat_hours", 24)),
+        insist_minutes=float(polling_raw.get("insist_minutes", 3)),
+        insist_every_seconds=int(polling_raw.get("insist_every_seconds", 30)),
     )
     if polling.interval_minutes < 1:
         raise ConfigError("polling.interval_minutes doit etre >= 1 (respect du site)")
     if polling.heartbeat_hours < 0:
         raise ConfigError("polling.heartbeat_hours doit etre >= 0 (0 = desactive)")
+    if polling.insist_minutes < 0 or polling.insist_every_seconds < 10:
+        raise ConfigError("polling.insist_minutes doit etre >= 0 et polling.insist_every_seconds >= 10")
 
     human = HumanConfig(
         confirm_timeout_minutes=int(human_raw.get("confirm_timeout_minutes", 15)),

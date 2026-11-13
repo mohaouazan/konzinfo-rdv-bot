@@ -74,14 +74,14 @@ def wait_for_human(site: BookingSite, cfg: AppConfig, notifier: Notifier, slot: 
                 return Outcome.LOST
             if not captcha_warned and site.detect_captcha():
                 notifier.send("🧩 Un captcha s'affiche dans le navigateur : merci de le resoudre a la main.",
-                              call=CALL_CAPTCHA)
+                              call=CALL_CAPTCHA, insist=True, insist_async=True)
                 captcha_warned = True
         except Exception as exc:  # noqa: BLE001 - la page peut etre en transition
             log.debug("sondage de la page : %s", exc)
         if not warned and time.monotonic() - started > timeout_s:
             notifier.send(f"⏰ {cfg.human.confirm_timeout_minutes} min sans confirmation pour {slot}.\n"
                           "Le navigateur reste ouvert : termine la reservation a la main, ou ferme la fenetre.",
-                          call=CALL_WAITING)
+                          call=CALL_WAITING, insist=True, insist_async=True)
             warned = True
         time.sleep(2)
 
@@ -112,7 +112,8 @@ def attempt(site: BookingSite, cfg: AppConfig, notifier: Notifier, *, dry_run: b
         f"1) Ouvre la boite {person.email} (spams compris) et recopie le code recu\n"
         f"2) Clique « Complete booking » dans le navigateur\n"
         f"Delai : {cfg.human.confirm_timeout_minutes} min.",
-        photo=shot, beep=True, call=CALL_SELECTED.format(minutes=cfg.human.confirm_timeout_minutes))
+        photo=shot, beep=True, call=CALL_SELECTED.format(minutes=cfg.human.confirm_timeout_minutes),
+        insist=True, insist_async=True)
     return wait_for_human(site, cfg, notifier, slot), slot
 
 
@@ -123,13 +124,22 @@ def _delay_seconds(cfg: AppConfig, errors: int) -> float:
 
 def run(cfg: AppConfig, *, loop: bool, headless: bool = False, dry_run: bool = False, force: bool = False,
         notifier: Notifier | None = None, state: State | None = None) -> int:
-    notifier = notifier or Notifier(cfg.telegram.token, cfg.telegram.chat_id, beep=cfg.human.beep, call=cfg.call)
+    notifier = notifier or Notifier(cfg.telegram.token, cfg.telegram.chat_id, beep=cfg.human.beep, call=cfg.call,
+                                    insist_minutes=cfg.polling.insist_minutes,
+                                    insist_every_s=cfg.polling.insist_every_seconds)
     state = state or State(cfg.state_dir)
     if state.is_booked() and not force:
         info = state.booked_info()
         log.warning("Une reservation est deja enregistree (%s, le %s). Relance avec --force pour recommencer.",
                     info.get("slot"), info.get("booked_at"))
         return 0
+    try:
+        return _run_loop(cfg, notifier, state, loop=loop, headless=headless, dry_run=dry_run)
+    finally:
+        notifier.shutdown()  # coupe les rappels en cours avant de quitter
+
+
+def _run_loop(cfg: AppConfig, notifier: Notifier, state: State, *, loop: bool, headless: bool, dry_run: bool) -> int:
     person = cfg.booking.person
     assert person is not None
     user_data = None if headless else cfg.user_data_dir
@@ -148,20 +158,21 @@ def run(cfg: AppConfig, *, loop: bool, headless: bool = False, dry_run: bool = F
                 errors += 3
                 outcome = Outcome.ERROR
                 notifier.send(f"⛔ Le site bloque l'acces : {exc}\nPause longue avant nouvel essai.",
-                              key="banned", min_interval_s=3600, call=CALL_ERROR)
+                              key="banned", min_interval_s=3600, call=CALL_ERROR, insist=True, insist_async=True)
             except CaptchaRequired as exc:
                 errors += 1
                 outcome = Outcome.ERROR
                 site.screenshot("captcha")
                 notifier.send(f"🧩 Captcha demande par le site : {exc}\nResous-le dans le navigateur ; "
-                              "nouvel essai ensuite.", key="captcha", min_interval_s=1800, call=CALL_CAPTCHA)
+                              "nouvel essai ensuite.", key="captcha", min_interval_s=1800, call=CALL_CAPTCHA,
+                              insist=True, insist_async=True)
             except SiteError as exc:
                 errors += 1
                 outcome = Outcome.ERROR
                 log.error("tentative en echec : %s", exc)
                 site.screenshot("error")
                 notifier.send(f"⚠️ Erreur pendant la reservation : {exc}", key="error", min_interval_s=3600,
-                              call=CALL_ERROR)
+                              call=CALL_ERROR, insist=True, insist_async=True)
             except Exception as exc:  # noqa: BLE001 - la boucle doit survivre
                 errors += 1
                 outcome = Outcome.ERROR
@@ -169,7 +180,7 @@ def run(cfg: AppConfig, *, loop: bool, headless: bool = False, dry_run: bool = F
                 if page.is_closed():
                     return 1
                 notifier.send(f"⚠️ Erreur inattendue : {type(exc).__name__}: {str(exc)[:200]}",
-                              key="error", min_interval_s=3600, call=CALL_ERROR)
+                              key="error", min_interval_s=3600, call=CALL_ERROR, insist=True, insist_async=True)
 
             if outcome == Outcome.CONFIRMED:
                 shot = site.screenshot("confirmation")

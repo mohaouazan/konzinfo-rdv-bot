@@ -31,6 +31,17 @@ def test_call_config_from_environment(monkeypatch):
             load_config(ROOT / "config.watch.yaml", root=ROOT)
 
 
+def test_insist_settings(monkeypatch, tmp_path):
+    _clean_env(monkeypatch)
+    cfg = load_config(ROOT / "config.watch.yaml", root=ROOT)
+    assert cfg.polling.insist_minutes == 3 and cfg.polling.insist_every_seconds == 30
+    bad = tmp_path / "c.yaml"
+    bad.write_text("booking:\n  consulate: X\n  applications: [Y]\npolling:\n  insist_every_seconds: 5\n",
+                   encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_config(bad, root=tmp_path)
+
+
 def test_example_config_loads_without_person(monkeypatch):
     _clean_env(monkeypatch)
     cfg = load_config(ROOT / "config.example.yaml", root=ROOT, require_person=False)

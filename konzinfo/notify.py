@@ -1,10 +1,11 @@
-"""Alertes Telegram (+ bip Windows, + appel vocal CallMeBot optionnel). Jamais bloquant : une erreur reseau est
-loguee, pas levee."""
+"""Alertes Telegram (+ bip Windows, + appel vocal CallMeBot optionnel, + rafale de rappels jusqu'a reponse).
+Jamais bloquant : une erreur reseau est loguee, pas levee."""
 from __future__ import annotations
 
 import logging
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -27,6 +28,11 @@ CALL_ATTEMPTS = 3          # tentatives max pour un meme appel
 CALL_RETRY_DELAY_S = 70    # CallMeBot refuse deux appels au meme utilisateur en moins de 65 s
 
 
+def _wait(stop: threading.Event, seconds: float) -> bool:
+    """Attend `seconds` ou le lever de `stop` ; True si `stop` a ete leve (isole pour les tests)."""
+    return stop.wait(seconds)
+
+
 def _visible_text(html: str) -> str:
     """Texte lisible d'une page HTML CallMeBot (scripts, styles et balises retires)."""
     txt = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html or "", flags=re.S | re.I)
@@ -36,12 +42,16 @@ def _visible_text(html: str) -> str:
 
 class Notifier:
     def __init__(self, token: str | None, chat_id: str | None, *, beep: bool = False,
-                 call: CallConfig | None = None):
+                 call: CallConfig | None = None, insist_minutes: float = 0, insist_every_s: int = 30):
         self.token = token
         self.chat_id = chat_id
         self.beep_enabled = beep
         self.call = call or CallConfig()
+        self.insist_minutes = max(0.0, float(insist_minutes))
+        self.insist_every_s = max(10, int(insist_every_s))
         self._last_sent: dict[str, float] = {}
+        self._insist_stop = threading.Event()
+        self._threads: list[threading.Thread] = []
 
     @property
     def enabled(self) -> bool:
@@ -49,16 +59,20 @@ class Notifier:
 
     # ------------------------------------------------------------------ public
     def send(self, text: str, *, photo: Path | None = None, key: str | None = None,
-             min_interval_s: int = 0, beep: bool = False, call: str | None = None) -> bool:
+             min_interval_s: int = 0, beep: bool = False, call: str | None = None,
+             insist: bool = False, insist_async: bool = False) -> bool:
         """Envoie `text` (et eventuellement une capture). Dedoublonne par `key` sur `min_interval_s`.
-        Si `call` est fourni et que CallMeBot est configure, declenche en plus un appel vocal qui lit `call`.
-        Renvoie le resultat de l'envoi Telegram (l'appel est un complement « meilleur effort »)."""
+        `call`  : texte lu lors d'un appel vocal CallMeBot (si configure) - complement « meilleur effort ».
+        `insist`: rafale de rappels Telegram jusqu'a ce que l'utilisateur reponde (voir `insist()`) ; avec
+                  `insist_async`, la rafale tourne dans un fil separe pour ne pas bloquer l'appelant.
+        Toute nouvelle notification annule la rafale precedente. Renvoie le resultat de l'envoi Telegram."""
         if key and min_interval_s:
             last = self._last_sent.get(key, 0.0)
             if time.monotonic() - last < min_interval_s:
                 log.debug("notification %r ignoree (dedoublonnage)", key)
                 return False
 
+        self.cancel_insist()
         if beep and self.beep_enabled:
             self.beep()
 
@@ -71,7 +85,52 @@ class Notifier:
         called = bool(call) and self.call.enabled and self._call(call)  # type: ignore[arg-type]
         if (ok or called) and key:
             self._last_sent[key] = time.monotonic()
+
+        if insist and ok and self.insist_minutes > 0:
+            stop = threading.Event()
+            self._insist_stop = stop
+            if insist_async:
+                worker = threading.Thread(target=self.insist, args=(text,), kwargs={"stop": stop},
+                                          name="konzinfo-insist", daemon=False)
+                worker.start()
+                self._threads.append(worker)
+            else:
+                self.insist(text, stop=stop)
         return ok
+
+    def insist(self, text: str, *, stop: threading.Event | None = None, since: float | None = None) -> int:
+        """Rappels Telegram repetes toutes les `insist_every_s` s pendant `insist_minutes` min, jusqu'a ce que
+        l'utilisateur reponde au bot (n'importe quel message), que `stop` soit leve ou que la duree soit ecoulee.
+        Renvoie le nombre de rappels envoyes. Ne leve jamais."""
+        if not self.enabled or self.insist_minutes <= 0:
+            return 0
+        stop = stop or threading.Event()
+        start = time.time() if since is None else since
+        total = max(1, int(self.insist_minutes * 60 // self.insist_every_s))
+        first_line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "alerte")[:200]
+        sent = 0
+        for i in range(1, total + 1):
+            if _wait(stop, self.insist_every_s):
+                log.info("rappels arretes (nouvelle notification ou fin du flux)")
+                break
+            if self._replied_since(start - 5):
+                log.info("rappels arretes : reponse recue sur Telegram")
+                break
+            if self._send_message(f"🔔 Rappel {i}/{total} : {first_line}\n"
+                                  "Reponds n'importe quoi a ce bot pour arreter les rappels."):
+                sent += 1
+        return sent
+
+    def cancel_insist(self) -> None:
+        """Interrompt la rafale de rappels en cours (le flux a avance : confirmation, creneau perdu, nouvelle alerte)."""
+        self._insist_stop.set()
+
+    def shutdown(self, timeout_s: float = 5) -> None:
+        """A appeler avant de quitter : stoppe les rappels et attend les fils en cours."""
+        self.cancel_insist()
+        for worker in self._threads:
+            worker.join(timeout=timeout_s)
+        self._threads.clear()
 
     def beep(self) -> None:
         try:
@@ -105,6 +164,25 @@ class Notifier:
         if not ok:
             ok = self._send_message(caption)
         return ok
+
+    def _replied_since(self, since_ts: float) -> bool:
+        """True si l'utilisateur a ecrit au bot depuis `since_ts` (epoch). Offset negatif : on ne lit que la fin de
+        la file, sans long polling, pour ne pas gener un autre processus qui l'interrogerait aussi."""
+        url = TELEGRAM_API.format(token=self.token, method="getUpdates")
+        try:
+            resp = requests.get(url, params={"offset": -20, "timeout": 0}, timeout=15)
+            data = resp.json()
+        except (requests.RequestException, ValueError) as exc:
+            log.debug("getUpdates impossible : %s", exc)
+            return False
+        if not data.get("ok"):
+            return False
+        for upd in data.get("result", []):
+            msg = upd.get("message") or upd.get("edited_message") or {}
+            chat = msg.get("chat") or {}
+            if str(chat.get("id")) == str(self.chat_id) and float(msg.get("date", 0)) >= since_ts:
+                return True
+        return False
 
     def _call(self, text: str) -> bool:
         """Appel vocal Telegram via CallMeBot : le service appelle `self.call.user` et lit `text` (synthese vocale).

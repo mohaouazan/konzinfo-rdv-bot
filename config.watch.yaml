@@ -13,3 +13,5 @@ polling:
   realert_minutes: 60
   error_alert_minutes: 180
   heartbeat_hours: 24
+  insist_minutes: 3
+  insist_every_seconds: 30

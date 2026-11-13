@@ -60,6 +60,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     t = sub.add_parser("notify-test", help="envoie un message Telegram de test (et un appel vocal avec --call)")
     t.add_argument("--call", action="store_true", help="declenche aussi un appel vocal CallMeBot de test")
+    t.add_argument("--insist", action="store_true",
+                   help="teste la rafale de rappels (reponds n'importe quoi au bot pour l'arreter)")
     return p
 
 
@@ -78,7 +80,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "notify-test":
             from konzinfo.notify import Notifier
 
-            notifier = Notifier(cfg.telegram.token, cfg.telegram.chat_id, beep=cfg.human.beep, call=cfg.call)
+            notifier = Notifier(cfg.telegram.token, cfg.telegram.chat_id, beep=cfg.human.beep, call=cfg.call,
+                                insist_minutes=cfg.polling.insist_minutes,
+                                insist_every_s=cfg.polling.insist_every_seconds)
             if not notifier.enabled:
                 log.error("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID absents du .env")
                 return 1
@@ -86,8 +90,14 @@ def main(argv: list[str] | None = None) -> int:
                 log.error("CALLMEBOT_USER absent du .env (envoie d'abord /start a @CallMeBot_txtbot)")
                 return 1
             speech = "Konzinfo : ceci est un appel de test, tout fonctionne." if args.call else None
-            ok = notifier.send(f"✅ konzinfo-rdv-bot v{__version__} : notifications Telegram operationnelles."
-                               + (" Appel vocal de test demande." if args.call else ""), beep=True, call=speech)
+            extra = (" Appel vocal de test demande." if args.call else "") + (
+                f" Rafale de rappels de test : toutes les {cfg.polling.insist_every_seconds} s pendant "
+                f"{cfg.polling.insist_minutes:g} min, reponds-moi pour l'arreter." if args.insist else "")
+            if args.insist:
+                log.info("rafale de rappels en cours (%g min) : reponds au bot sur Telegram pour l'arreter",
+                         cfg.polling.insist_minutes)
+            ok = notifier.send(f"✅ konzinfo-rdv-bot v{__version__} : notifications Telegram operationnelles." + extra,
+                               beep=True, call=speech, insist=args.insist)
             log.info("envoi Telegram : %s%s", "OK" if ok else "ECHEC",
                      f" | appel vocal demande vers {cfg.call.user} (voix {cfg.call.lang})" if args.call else "")
             return 0 if ok else 1

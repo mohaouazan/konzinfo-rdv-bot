@@ -85,6 +85,18 @@ l'onglet Actions. Pour qu'un arrêt ne passe pas inaperçu, le surveillant envoi
 (« Surveillance active ») au plus une fois par jour (`polling.heartbeat_hours`) : plus aucun message pendant plus
 d'un jour signifie que la surveillance est arrêtée.
 
+## Rafale de rappels (gratuit)
+
+Un seul message peut passer inaperçu la nuit. Après chaque alerte urgente (créneaux détectés, créneau sélectionné,
+délai dépassé, captcha, erreurs et blocages), le bot **répète un rappel toutes les 30 s pendant 3 min**
+(`polling.insist_minutes`, `polling.insist_every_seconds` ; `0` = désactivé) et **s'arrête dès que tu lui réponds**
+n'importe quoi, ou dès que le flux avance (confirmation, créneau perdu, nouvelle alerte). Jamais pour le battement de
+cœur. Test : `python -m konzinfo notify-test --insist`.
+
+Pour que ces rappels te réveillent sur Android : dans Telegram, ouvre la discussion avec ton bot → ⋮ → Notifications →
+son fort et vibration ; puis, dans les paramètres Android de notification de cette discussion (appui long sur une
+notification → réglages), active « Ignorer Ne pas déranger ». Chaque rappel sonne alors même en mode silencieux.
+
 ## Appel vocal (optionnel)
 
 Un bot Telegram ne peut pas téléphoner. Pour être réveillé quand un créneau apparaît, le script peut déclencher en plus

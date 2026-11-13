@@ -4,9 +4,18 @@ from konzinfo.notify import Notifier
 
 
 class FakeResp:
-    def __init__(self, status=200, text="ok"):
+    def __init__(self, status=200, text="ok", payload=None):
         self.status_code = status
         self.text = text
+        self._payload = payload if payload is not None else {"ok": True, "result": []}
+
+    def json(self):
+        return self._payload
+
+
+def _no_wait(monkeypatch):
+    """Les rafales n'attendent pas : l'attente renvoie immediatement l'etat du drapeau d'arret."""
+    monkeypatch.setattr(notify_mod, "_wait", lambda stop, seconds: stop.is_set())
 
 
 def test_disabled_without_token():
@@ -131,3 +140,53 @@ def test_call_retries_when_callmebot_is_flooded(monkeypatch):
     monkeypatch.setattr(notify_mod.requests, "get",
                         lambda url, params, timeout: gets.append(1) or FakeResp(200, "Warning! User not authorized."))
     assert n._call("Konzinfo : appel") is False and len(gets) == 1   # refus definitif : pas de nouvel essai
+
+
+def test_insist_sends_reminders_until_reply(monkeypatch):
+    _no_wait(monkeypatch)
+    posts, polls = [], []
+    monkeypatch.setattr(notify_mod.requests, "post",
+                        lambda url, timeout, **kw: posts.append(kw["data"]["text"]) or FakeResp())
+
+    def fake_get(url, params, timeout):
+        polls.append(params)
+        replied = len(polls) >= 3  # l'utilisateur repond apres le 2e rappel
+        msg = {"date": 10**10 if replied else 1, "chat": {"id": 42}, "text": "ok"}
+        return FakeResp(200, "{}", {"ok": True, "result": [{"update_id": 1, "message": msg}]})
+
+    monkeypatch.setattr(notify_mod.requests, "get", fake_get)
+    n = Notifier("123:abc", "42", insist_minutes=3, insist_every_s=30)
+    assert n.insist("🎯 Creneaux DISPONIBLES - Rabat\ndetails", since=100.0) == 2
+    assert posts[0].startswith("🔔 Rappel 1/6 : 🎯 Creneaux DISPONIBLES - Rabat") and "Reponds" in posts[0]
+    assert len(posts) == 2 and polls[0]["offset"] < 0 and polls[0]["timeout"] == 0
+
+
+def test_insist_full_burst_disabled_and_cancelled(monkeypatch):
+    _no_wait(monkeypatch)
+    posts = []
+    monkeypatch.setattr(notify_mod.requests, "post", lambda url, timeout, **kw: posts.append(1) or FakeResp())
+    monkeypatch.setattr(notify_mod.requests, "get", lambda url, params, timeout: FakeResp())  # aucune reponse
+    assert Notifier("123:abc", "42", insist_minutes=2, insist_every_s=30).insist("alerte") == 4
+    assert Notifier("123:abc", "42", insist_minutes=0).insist("alerte") == 0
+    assert Notifier(None, None, insist_minutes=3).insist("alerte") == 0
+    stop = notify_mod.threading.Event()
+    stop.set()
+    assert Notifier("123:abc", "42", insist_minutes=3).insist("alerte", stop=stop) == 0  # annulee
+    assert len(posts) == 4
+
+
+def test_send_with_insist(monkeypatch):
+    _no_wait(monkeypatch)
+    posts = []
+    monkeypatch.setattr(notify_mod.requests, "post",
+                        lambda url, timeout, **kw: posts.append(kw["data"]["text"]) or FakeResp())
+    monkeypatch.setattr(notify_mod.requests, "get", lambda url, params, timeout: FakeResp())
+    n = Notifier("123:abc", "42", insist_minutes=1, insist_every_s=30)
+    assert n.send("urgent", insist=True) is True
+    assert posts[0] == "urgent" and len(posts) == 3  # message + 2 rappels
+    assert all(p.startswith("🔔 Rappel") for p in posts[1:])
+    n.send("info")                                   # sans insist : rien de plus
+    assert len(posts) == 4
+    assert n.send("asynchrone", insist=True, insist_async=True) is True
+    n.shutdown()                                     # attend le fil de rappels
+    assert len(posts) == 5 + 2

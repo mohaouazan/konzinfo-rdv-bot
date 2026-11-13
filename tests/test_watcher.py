@@ -10,10 +10,12 @@ class RecordingNotifier(Notifier):
         super().__init__("t", "c")
         self.messages = []
         self.calls = []  # texte d'appel vocal demande (None = pas d'appel)
+        self.insists = []  # rafale de rappels demandee ?
 
     def send(self, text, **kwargs):  # noqa: D401
         self.messages.append(text)
         self.calls.append(kwargs.get("call"))
+        self.insists.append(bool(kwargs.get("insist")))
         return True
 
 
@@ -24,13 +26,13 @@ def test_calls_only_for_urgent_alerts(tmp_path):
     process_result(cfg, quiet, {}, n)                        # battement de coeur : pas d'appel
     process_result(cfg, quiet, {"available": True}, n)       # « plus aucun creneau » : pas d'appel
     process_result(cfg, quiet, {}, n, notify_always=True)    # simple verification : pas d'appel
-    assert len(n.calls) == 3 and all(c is None for c in n.calls)
+    assert len(n.calls) == 3 and all(c is None for c in n.calls) and not any(n.insists)
     avail = {"ts": "x", "available": True, "days": ["2026-12-01"], "slots": [], "error": None, "screenshot": None}
     process_result(cfg, avail, {}, n)
-    assert n.calls[-1] and "disponibles" in n.calls[-1]
+    assert n.calls[-1] and "disponibles" in n.calls[-1] and n.insists[-1] is True
     err = {"ts": "x", "available": False, "days": [], "slots": [], "error": "boom"}
     process_result(cfg, err, {}, n)
-    assert n.calls[-1] and "erreur" in n.calls[-1]
+    assert n.calls[-1] and "erreur" in n.calls[-1] and n.insists[-1] is True
 
 
 def _cfg(tmp_path):
