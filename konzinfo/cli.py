@@ -58,7 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
     d = sub.add_parser("discover", help="exporte le DOM du site dans discovery/ (maintenance des selecteurs)")
     d.add_argument("--show", action="store_true", help="navigateur visible")
 
-    sub.add_parser("notify-test", help="envoie un message Telegram de test")
+    t = sub.add_parser("notify-test", help="envoie un message Telegram de test (et un appel vocal avec --call)")
+    t.add_argument("--call", action="store_true", help="declenche aussi un appel vocal CallMeBot de test")
     return p
 
 
@@ -77,12 +78,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "notify-test":
             from konzinfo.notify import Notifier
 
-            notifier = Notifier(cfg.telegram.token, cfg.telegram.chat_id, beep=cfg.human.beep)
+            notifier = Notifier(cfg.telegram.token, cfg.telegram.chat_id, beep=cfg.human.beep, call=cfg.call)
             if not notifier.enabled:
                 log.error("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID absents du .env")
                 return 1
-            ok = notifier.send(f"✅ konzinfo-rdv-bot v{__version__} : notifications Telegram operationnelles.", beep=True)
-            log.info("envoi Telegram : %s", "OK" if ok else "ECHEC")
+            if args.call and not cfg.call.enabled:
+                log.error("CALLMEBOT_USER absent du .env (envoie d'abord /start a @CallMeBot_txtbot)")
+                return 1
+            speech = "Konzinfo : ceci est un appel de test, tout fonctionne." if args.call else None
+            ok = notifier.send(f"✅ konzinfo-rdv-bot v{__version__} : notifications Telegram operationnelles."
+                               + (" Appel vocal de test demande." if args.call else ""), beep=True, call=speech)
+            log.info("envoi Telegram : %s%s", "OK" if ok else "ECHEC",
+                     f" | appel vocal demande vers {cfg.call.user} (voix {cfg.call.lang})" if args.call else "")
             return 0 if ok else 1
 
         if args.cmd == "discover":

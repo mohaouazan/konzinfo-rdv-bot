@@ -71,7 +71,8 @@ Le workflow `.github/workflows/watch.yml` lance `watch --once` toutes les 5 min 
 données sont donc fournies par des **secrets** du dépôt (Settings → Secrets and variables → Actions) :
 
 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `KONZINFO_PERSON_NAME`, `KONZINFO_PERSON_BIRTH_DATE`,
-`KONZINFO_PERSON_PHONE`, `KONZINFO_PERSON_EMAIL`, `KONZINFO_PERSON_PASSPORT`.
+`KONZINFO_PERSON_PHONE`, `KONZINFO_PERSON_EMAIL`, `KONZINFO_PERSON_PASSPORT` — plus `CALLMEBOT_USER` (et
+`CALLMEBOT_LANG`) si l'appel vocal est activé (voir plus bas).
 
 Limites : le cron GitHub est indicatif (souvent en retard), l'IP des runners peut être bloquée par le site, et le
 navigateur y est forcément invisible — la réservation elle-même se fait toujours depuis ton PC.
@@ -83,6 +84,28 @@ et ne contient aucune donnée personnelle. GitHub désactive automatiquement les
 l'onglet Actions. Pour qu'un arrêt ne passe pas inaperçu, le surveillant envoie un **battement de cœur** Telegram
 (« Surveillance active ») au plus une fois par jour (`polling.heartbeat_hours`) : plus aucun message pendant plus
 d'un jour signifie que la surveillance est arrêtée.
+
+## Appel vocal (optionnel)
+
+Un bot Telegram ne peut pas téléphoner. Pour être réveillé quand un créneau apparaît, le script peut déclencher en plus
+un **appel vocal Telegram** via le service tiers gratuit [CallMeBot](https://www.callmebot.com/telegram-call-api/) :
+ton téléphone sonne comme pour un appel Telegram et une voix lit le message en français.
+
+1. Dans Telegram, ouvre **@CallMeBot_txtbot** et envoie `/start` (autorisation, une seule fois). Vérifie dans
+   Réglages → Confidentialité → Appels que les appels sont autorisés.
+2. Dans `.env` : `CALLMEBOT_USER=@ton_username` (ou ton numéro international), éventuellement `CALLMEBOT_LANG`
+   (`fr-FR-Standard-F` voix féminine, `fr-FR-Standard-G` masculine) et `CALLMEBOT_REPEAT` (nombre de lectures, 1 à 5).
+3. `python -m konzinfo notify-test --call` : le téléphone doit sonner dans la minute.
+4. Pour la surveillance cloud : secrets `CALLMEBOT_USER` (et `CALLMEBOT_LANG` si besoin) dans le dépôt.
+
+Appels déclenchés : créneaux détectés, créneau sélectionné (code à saisir), délai de confirmation dépassé, captcha,
+erreurs et blocages. Jamais pour le battement de cœur ni les simples vérifications. Chaque appel suit une alerte déjà
+limitée en fréquence (re-alerte, erreurs), donc pas de rafale. Le message Telegram est toujours envoyé ; l'appel est un
+complément « meilleur effort » : CallMeBot est un service non officiel, en file d'attente partagée (retard possible),
+appel de 30 s, texte lu limité à 256 caractères, et seul ton @username lui est transmis (aucune donnée du dossier).
+
+Android : règle la discussion avec ton bot sur un son fort et, dans les paramètres Android de notification de cette
+discussion, coche « Ignorer Ne pas déranger » ; autorise aussi les appels Telegram en mode Ne pas déranger.
 
 ## Comment ça marche (technique)
 

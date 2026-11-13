@@ -10,8 +10,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _clean_env(monkeypatch):
     for key in list(os.environ):
-        if key.startswith("KONZINFO_") or key.startswith("TELEGRAM_"):
+        if key.startswith(("KONZINFO_", "TELEGRAM_", "CALLMEBOT_")):
             monkeypatch.delenv(key, raising=False)
+
+
+def test_call_config_from_environment(monkeypatch):
+    _clean_env(monkeypatch)
+    monkeypatch.setenv("CALLMEBOT_USER", "")        # explicite : le .env local eventuel ne doit pas l'emporter
+    cfg = load_config(ROOT / "config.watch.yaml", root=ROOT)
+    assert not cfg.call.enabled and cfg.call.repeat == 2 and cfg.call.lang.startswith("fr-FR-Standard")
+    monkeypatch.setenv("CALLMEBOT_USER", "@moi")
+    monkeypatch.setenv("CALLMEBOT_LANG", "fr-FR-Standard-G")
+    monkeypatch.setenv("CALLMEBOT_REPEAT", "3")
+    cfg = load_config(ROOT / "config.watch.yaml", root=ROOT)
+    assert cfg.call.enabled and cfg.call.user == "@moi"
+    assert cfg.call.lang == "fr-FR-Standard-G" and cfg.call.repeat == 3
+    for bad in ("9", "0", "deux"):
+        monkeypatch.setenv("CALLMEBOT_REPEAT", bad)
+        with pytest.raises(ConfigError):
+            load_config(ROOT / "config.watch.yaml", root=ROOT)
 
 
 def test_example_config_loads_without_person(monkeypatch):

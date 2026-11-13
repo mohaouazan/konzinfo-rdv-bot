@@ -69,6 +69,11 @@ def _slots_from_iso(values: list[str]) -> list[Slot]:
     return out
 
 
+CALL_AVAILABLE = ("Konzinfo : des créneaux de rendez-vous sont disponibles au consulat. "
+                  "Lance la réservation maintenant.")
+CALL_ERROR = "Konzinfo : la surveillance du site est en erreur. Regarde Telegram."
+
+
 def process_result(cfg: AppConfig, result: dict, prev: dict, notifier: Notifier, *,
                    notify_always: bool = False) -> dict:
     """Decide des alertes a partir du resultat courant et de l'etat precedent ; renvoie l'etat a sauver."""
@@ -77,7 +82,7 @@ def process_result(cfg: AppConfig, result: dict, prev: dict, notifier: Notifier,
     if result.get("error"):
         state["consecutive_errors"] = int(prev.get("consecutive_errors", 0)) + 1
         if _elapsed_minutes(prev.get("last_error_alert_ts")) >= cfg.polling.error_alert_minutes:
-            if notifier.send(f"⚠️ Surveillance Konzinfo ({label}) en erreur :\n{result['error']}"):
+            if notifier.send(f"⚠️ Surveillance Konzinfo ({label}) en erreur :\n{result['error']}", call=CALL_ERROR):
                 state["last_error_alert_ts"] = now_iso()
         return state
     state["consecutive_errors"] = 0
@@ -90,7 +95,7 @@ def process_result(cfg: AppConfig, result: dict, prev: dict, notifier: Notifier,
             msg = (f"🎯 Creneaux DISPONIBLES - {label}\n{detail}\n\n"
                    f"→ Lance maintenant sur le PC : python -m konzinfo book")
             photo = result.get("screenshot")
-            if notifier.send(msg, photo=photo, beep=True):
+            if notifier.send(msg, photo=photo, beep=True, call=CALL_AVAILABLE):
                 state["last_alert_ts"] = now_iso()
                 sent_any = True
     elif prev.get("available"):
@@ -121,7 +126,7 @@ def _heartbeat(cfg: AppConfig, result: dict, prev: dict, state: dict, notifier: 
 
 def run(cfg: AppConfig, *, once: bool, headless: bool = True, deep: bool = True,
         notify_always: bool = False, notifier: Notifier | None = None, state: State | None = None) -> dict:
-    notifier = notifier or Notifier(cfg.telegram.token, cfg.telegram.chat_id, beep=cfg.human.beep)
+    notifier = notifier or Notifier(cfg.telegram.token, cfg.telegram.chat_id, beep=cfg.human.beep, call=cfg.call)
     state = state or State(cfg.state_dir)
     while True:
         prev = state.load()

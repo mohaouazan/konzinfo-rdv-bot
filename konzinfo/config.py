@@ -75,6 +75,18 @@ class TelegramConfig:
 
 
 @dataclass
+class CallConfig:
+    """Appel vocal Telegram via CallMeBot (service tiers, meilleur effort). Desactive si `user` est vide."""
+    user: str | None = None                  # @username Telegram (ou numero international)
+    lang: str = "fr-FR-Standard-F"           # voix Google TTS « Standard » acceptee par CallMeBot
+    repeat: int = 2                          # nombre de lectures du texte pendant l'appel (1..5)
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.user)
+
+
+@dataclass
 class AppConfig:
     site_url: str
     booking: BookingConfig
@@ -82,6 +94,7 @@ class AppConfig:
     polling: PollingConfig
     human: HumanConfig
     telegram: TelegramConfig
+    call: CallConfig
     root: Path
 
     @property
@@ -287,6 +300,19 @@ def load_config(path: Path | str | None = None, *, root: Path | str | None = Non
         chat_id=(os.environ.get("TELEGRAM_CHAT_ID") or "").strip() or None,
     )
 
+    repeat_raw = (os.environ.get("CALLMEBOT_REPEAT") or "").strip()
+    try:
+        repeat = int(repeat_raw) if repeat_raw else CallConfig.repeat
+    except ValueError as exc:
+        raise ConfigError("CALLMEBOT_REPEAT doit etre un entier entre 1 et 5") from exc
+    if not 1 <= repeat <= 5:
+        raise ConfigError("CALLMEBOT_REPEAT doit etre compris entre 1 et 5")
+    call = CallConfig(
+        user=(os.environ.get("CALLMEBOT_USER") or "").strip() or None,
+        lang=(os.environ.get("CALLMEBOT_LANG") or "").strip() or CallConfig.lang,
+        repeat=repeat,
+    )
+
     return AppConfig(
         site_url=site_url,
         booking=BookingConfig(consulate=consulate, applications=applications, applicants=applicants,
@@ -295,5 +321,6 @@ def load_config(path: Path | str | None = None, *, root: Path | str | None = Non
         polling=polling,
         human=human,
         telegram=telegram,
+        call=call,
         root=root_path,
     )
