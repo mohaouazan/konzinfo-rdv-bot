@@ -18,6 +18,16 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 MAX_TEXT = 4000  # limite Telegram : 4096
 CALLMEBOT_URL = "https://api.callmebot.com/start.php"  # appel vocal Telegram (service tiers, non officiel)
 MAX_SPEECH = 256  # CallMeBot coupe le texte lu au-dela
+# CallMeBot repond en HTTP 200 meme en cas de refus : le verdict est dans le texte de la page, ex.
+# « Authorization for user @x is not received. Warning! User not authorized. »
+_CALL_FAILURE = re.compile(r"error|not authorized|not received|warning|disabled|invalid", re.I)
+
+
+def _visible_text(html: str) -> str:
+    """Texte lisible d'une page HTML CallMeBot (scripts, styles et balises retires)."""
+    txt = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html or "", flags=re.S | re.I)
+    txt = re.sub(r"<[^>]+>", " ", txt)
+    return re.sub(r"\s+", " ", txt).strip()
 
 
 class Notifier:
@@ -102,11 +112,12 @@ class Notifier:
         except requests.RequestException as exc:
             log.warning("CallMeBot injoignable : %s", exc)
             return False
-        snippet = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", resp.text or ""))[:200].strip()
-        if resp.status_code != 200 or "error" in snippet.lower():
-            log.warning("CallMeBot : appel refuse (HTTP %s) : %s", resp.status_code, snippet)
+        verdict = _visible_text(resp.text)
+        if resp.status_code != 200 or _CALL_FAILURE.search(verdict):
+            log.warning("CallMeBot : appel non passe (HTTP %s) : %s", resp.status_code,
+                        verdict[:300] or "(reponse vide)")
             return False
-        log.info("CallMeBot : appel vers %s demande (%s)", self.call.user, snippet or "OK")
+        log.info("CallMeBot : appel vers %s demande (%s)", self.call.user, verdict[:200] or "OK")
         return True
 
     @staticmethod

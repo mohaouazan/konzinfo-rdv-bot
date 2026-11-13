@@ -104,3 +104,10 @@ def test_call_is_best_effort(monkeypatch):
     monkeypatch.setattr(notify_mod.requests, "get",
                         lambda url, params, timeout: FakeResp(200, "<b>ERROR:</b> user not authorized"))
     assert n._call("Konzinfo : appel") is False                # refus CallMeBot = echec logue, pas d'exception
+    real = ('<script>window.dataLayer = window.dataLayer || [];</script>Checking Authorization for @moi...<br>'
+            'Using bot: @CallMeBot_API Authorization for user @moi is not received. <b>Warning!</b> User not authorized.')
+    monkeypatch.setattr(notify_mod.requests, "get", lambda url, params, timeout: FakeResp(200, real))
+    assert n._call("Konzinfo : appel") is False                # vraie reponse CallMeBot sans le mot « error »
+    ok_page = '<script>var error = 0;</script><p>Checking Authorization for @moi...</p><p>Call queued</p>'
+    monkeypatch.setattr(notify_mod.requests, "get", lambda url, params, timeout: FakeResp(200, ok_page))
+    assert n._call("Konzinfo : appel") is True                 # un mot suspect dans un <script> ne compte pas
