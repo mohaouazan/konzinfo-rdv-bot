@@ -23,7 +23,29 @@ Le script **ne réserve rien** : dès l'alerte, la réservation se fait à la ma
   (bot créé via @BotFather ; chat_id lu via `https://api.telegram.org/bot<TOKEN>/getUpdates` après un message au bot).
 - Autre consulat / démarche : variables d'environnement `KONZINFO_CONSULATE`, `KONZINFO_APPLICATION` (sous-chaînes des
   libellés du site), ou les constantes en haut de `check.py`.
-- Cadence : `.github/workflows/watch.yml` (cron `*/5`, minimum GitHub ; l'horaire est indicatif, souvent en retard).
+- Cadence : voir « Déclenchement » ci-dessous.
+
+## Déclenchement (toutes les 3 minutes)
+
+Le cron intégré de GitHub Actions n'est pas fiable pour une cadence serrée : sur ce dépôt, il n'a lancé que 2 exécutions en
+10 heures au lieu de 120. Le déclenchement « manuel » (`workflow_dispatch`), lui, démarre en quelques secondes. La vérification
+est donc déclenchée **de l'extérieur** par le service gratuit [cron-job.org](https://cron-job.org/), qui appelle toutes les
+3 minutes l'API GitHub :
+
+```
+POST https://api.github.com/repos/mohaouazan/konzinfo-rdv-bot/actions/workflows/watch.yml/dispatches
+Authorization: Bearer <jeton GitHub fine-grained, limité à ce dépôt, permission Actions : lecture/écriture>
+Accept: application/vnd.github+json
+X-GitHub-Api-Version: 2022-11-28
+corps : {"ref":"main"}
+```
+
+- Le cron GitHub reste en **roue de secours** (toutes les 15 min, s'il daigne tourner) ; le groupe `concurrency` du workflow
+  empêche deux vérifications de se chevaucher.
+- Le jeton expire au bout de **365 jours** : cron-job.org enverra des e-mails d'échec, puis désactivera la tâche après 25 échecs.
+  Pour renouveler : nouveau jeton sur https://github.com/settings/personal-access-tokens, puis le remplacer dans l'en-tête
+  `Authorization` de la tâche cron-job.org. Le jeton se révoque à tout moment au même endroit.
+- Changer la cadence = modifier la tâche cron-job.org (minutes d'exécution), rien à toucher dans le dépôt.
 
 ## Lancer à la main
 

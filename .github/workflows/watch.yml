@@ -2,7 +2,9 @@ name: watch
 
 on:
   schedule:
-    - cron: "3-58/5 * * * *"   # toutes les 5 min, decale de 3 min : les minutes « rondes » sont surchargees chez GitHub
+    # Roue de secours seulement : le cron GitHub est tres irregulier (2 runs en 10 h observes).
+    # La cadence reelle (toutes les 3 min) vient de cron-job.org, qui declenche workflow_dispatch via l'API (voir README).
+    - cron: "7-59/15 * * * *"
   workflow_dispatch:
 
 concurrency:
