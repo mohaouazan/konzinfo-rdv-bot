@@ -2,7 +2,7 @@ name: watch
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # toutes les 5 min (minimum GitHub ; horaire indicatif, souvent en retard)
+    - cron: "3-58/5 * * * *"   # toutes les 5 min, decale de 3 min : les minutes « rondes » sont surchargees chez GitHub
   workflow_dispatch:
 
 concurrency:
